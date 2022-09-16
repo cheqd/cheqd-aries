@@ -47,14 +47,16 @@ export class FaberInquirer extends BaseInquirer {
 
   private async getPromptChoice() {
     const balance = await this.faber.getAccountBalance()
-    const isDidRegistered = (await this.faber.resolveDid())
+    const isDidRegistered = await this.faber.resolveDid()
 
     if(!balance) console.log(purpleText(Title.GetTokens))
     
     if (this.faber.connectionRecordAliceId) return inquirer.prompt([this.inquireOptions(this.promptOptionsString)])
     
-    const reducedOption = [PromptOptions.MakeDidPublic, PromptOptions.GetBalance, PromptOptions.Exit, PromptOptions.Restart]
-    if (isDidRegistered) reducedOption.unshift(PromptOptions.ReceiveConnectionUrl, PromptOptions.ResolveDid)
+    let reducedOption = [PromptOptions.MakeDidPublic, PromptOptions.GetBalance, PromptOptions.Exit, PromptOptions.Restart]
+    if (isDidRegistered.didDocument) {
+      reducedOption = [PromptOptions.ResolveDid, PromptOptions.ReceiveConnectionUrl, PromptOptions.GetBalance, PromptOptions.Exit, PromptOptions.Restart]
+    }
     
     return inquirer.prompt([this.inquireOptions(reducedOption)])
   }
@@ -105,7 +107,10 @@ export class FaberInquirer extends BaseInquirer {
 
   public async resolveDid() {
     const response = await this.faber.resolveDid()
-    console.log('Did document: ', response)
+    console.log('Did document: ', {
+      didDocument: response.didDocument,
+      resources: response.didDocumentMetadata.linkedResourceMetadata
+    })
   }
 
   public async getBalance() {

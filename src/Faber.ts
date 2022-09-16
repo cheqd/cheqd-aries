@@ -97,7 +97,7 @@ export class Faber extends BaseAgent {
     } 
     try {
       const resp = await fetch(`${this.config.cheqdConfig!.resolverUrl}/1.0/identifiers/${this.did}`)
-      return (await resp.json().then((result)=>result.didDocument))
+      return await resp.json()
     } catch {
       return null
     }
