@@ -1,8 +1,8 @@
-import type { CredentialExchangeRecord, ProofRecord } from '@aries-framework/core'
+import type { CredentialExchangeRecord, ProofExchangeRecord } from '@aries-framework/core'
 
 import { clear } from 'console'
 import { textSync } from 'figlet'
-import inquirer from 'inquirer'
+import { prompt } from 'inquirer'
 
 import { Alice } from './Alice'
 import { BaseInquirer, ConfirmOptions } from './BaseInquirer'
@@ -17,9 +17,8 @@ export const runAlice = async () => {
 }
 
 enum PromptOptions {
-  CreateConnection = 'Create connection invitation',
+  ReceiveConnectionUrl = 'Receive connection invitation',
   SendMessage = 'Send message',
-  ListCredentials = 'List credentials',
   Exit = 'Exit',
   Restart = 'Restart',
 }
@@ -43,10 +42,10 @@ export class AliceInquirer extends BaseInquirer {
   }
 
   private async getPromptChoice() {
-    if (this.alice.outOfBandId) return inquirer.prompt([this.inquireOptions(this.promptOptionsString)])
+    if (this.alice.connectionRecordFaberId) return prompt([this.inquireOptions(this.promptOptionsString)])
 
-    const reducedOption = [PromptOptions.CreateConnection, PromptOptions.Exit, PromptOptions.Restart]
-    return inquirer.prompt([this.inquireOptions(reducedOption)])
+    const reducedOption = [PromptOptions.ReceiveConnectionUrl, PromptOptions.Exit, PromptOptions.Restart]
+    return prompt([this.inquireOptions(reducedOption)])
   }
 
   public async processAnswer() {
@@ -54,14 +53,11 @@ export class AliceInquirer extends BaseInquirer {
     if (this.listener.on) return
 
     switch (choice.options) {
-      case PromptOptions.CreateConnection:
+      case PromptOptions.ReceiveConnectionUrl:
         await this.connection()
         break
       case PromptOptions.SendMessage:
         await this.message()
-        break
-      case PromptOptions.ListCredentials:
-        await this.getCredentials()
         break
       case PromptOptions.Exit:
         await this.exit()
@@ -74,7 +70,7 @@ export class AliceInquirer extends BaseInquirer {
   }
 
   public async acceptCredentialOffer(credentialRecord: CredentialExchangeRecord) {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(Title.CredentialOfferTitle)])
+    const confirm = await prompt([this.inquireConfirmation(Title.CredentialOfferTitle)])
     if (confirm.options === ConfirmOptions.No) {
       await this.alice.agent.credentials.declineOffer(credentialRecord.id)
     } else if (confirm.options === ConfirmOptions.Yes) {
@@ -82,12 +78,8 @@ export class AliceInquirer extends BaseInquirer {
     }
   }
 
-  public async getCredentials() {
-    await this.alice.getCredentials()
-  }
-
-  public async acceptProofRequest(proofRecord: ProofRecord) {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(Title.ProofRequestTitle)])
+  public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
+    const confirm = await prompt([this.inquireConfirmation(Title.ProofRequestTitle)])
     if (confirm.options === ConfirmOptions.No) {
       await this.alice.agent.proofs.declineRequest(proofRecord.id)
     } else if (confirm.options === ConfirmOptions.Yes) {
@@ -96,7 +88,9 @@ export class AliceInquirer extends BaseInquirer {
   }
 
   public async connection() {
-    await this.alice.setupConnection()
+    const title = Title.InvitationTitle
+    const getUrl = await prompt([this.inquireInput(title)])
+    await this.alice.acceptConnection(getUrl.input)
     if (!this.alice.connected) return
 
     this.listener.credentialOfferListener(this.alice, this)
@@ -111,7 +105,7 @@ export class AliceInquirer extends BaseInquirer {
   }
 
   public async exit() {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(Title.ConfirmTitle)])
+    const confirm = await prompt([this.inquireConfirmation(Title.ConfirmTitle)])
     if (confirm.options === ConfirmOptions.No) {
       return
     } else if (confirm.options === ConfirmOptions.Yes) {
@@ -120,7 +114,7 @@ export class AliceInquirer extends BaseInquirer {
   }
 
   public async restart() {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(Title.ConfirmTitle)])
+    const confirm = await prompt([this.inquireConfirmation(Title.ConfirmTitle)])
     if (confirm.options === ConfirmOptions.No) {
       await this.processAnswer()
       return

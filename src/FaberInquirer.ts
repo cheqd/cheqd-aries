@@ -1,11 +1,11 @@
 import { clear } from 'console'
 import { textSync } from 'figlet'
-import inquirer from 'inquirer'
+import { prompt } from 'inquirer'
 
 import { BaseInquirer, ConfirmOptions } from './BaseInquirer'
 import { Faber } from './Faber'
 import { Listener } from './Listener'
-import { purpleText, Title } from './OutputClass'
+import { Title } from './OutputClass'
 
 export const runFaber = async () => {
   clear()
@@ -15,13 +15,9 @@ export const runFaber = async () => {
 }
 
 enum PromptOptions {
-  MakeDidPublic = "Publish your DID",
-  ResolveDid = "Resolve your DID",
-  GetBalance = "Get your account balance",
-  ReceiveConnectionUrl = 'Receive connection invitation',
+  CreateConnection = 'Create connection invitation',
   OfferCredential = 'Offer credential',
   RequestProof = 'Request proof',
-  ListProofs = 'List proofs',
   SendMessage = 'Send message',
   Exit = 'Exit',
   Restart = 'Restart',
@@ -46,19 +42,10 @@ export class FaberInquirer extends BaseInquirer {
   }
 
   private async getPromptChoice() {
-    const balance = await this.faber.getAccountBalance()
-    const isDidRegistered = await this.faber.resolveDid()
+    if (this.faber.outOfBandId) return prompt([this.inquireOptions(this.promptOptionsString)])
 
-    if(!balance) console.log(purpleText(Title.GetTokens))
-    
-    if (this.faber.connectionRecordAliceId) return inquirer.prompt([this.inquireOptions(this.promptOptionsString)])
-    
-    let reducedOption = [PromptOptions.MakeDidPublic, PromptOptions.GetBalance, PromptOptions.Exit, PromptOptions.Restart]
-    if (isDidRegistered.didDocument) {
-      reducedOption = [PromptOptions.ResolveDid, PromptOptions.ReceiveConnectionUrl, PromptOptions.GetBalance, PromptOptions.Exit, PromptOptions.Restart]
-    }
-    
-    return inquirer.prompt([this.inquireOptions(reducedOption)])
+    const reducedOption = [PromptOptions.CreateConnection, PromptOptions.Exit, PromptOptions.Restart]
+    return prompt([this.inquireOptions(reducedOption)])
   }
 
   public async processAnswer() {
@@ -66,16 +53,7 @@ export class FaberInquirer extends BaseInquirer {
     if (this.listener.on) return
 
     switch (choice.options) {
-      case PromptOptions.MakeDidPublic:
-        await this.registerDid()
-        break
-      case PromptOptions.ResolveDid:
-        await this.resolveDid()
-        break
-      case PromptOptions.GetBalance:
-        await this.getBalance()
-        break
-      case PromptOptions.ReceiveConnectionUrl:
+      case PromptOptions.CreateConnection:
         await this.connection()
         break
       case PromptOptions.OfferCredential:
@@ -84,9 +62,6 @@ export class FaberInquirer extends BaseInquirer {
       case PromptOptions.RequestProof:
         await this.proof()
         return
-      case PromptOptions.ListProofs:
-        await this.getProofs()
-        break
       case PromptOptions.SendMessage:
         await this.message()
         break
@@ -100,32 +75,12 @@ export class FaberInquirer extends BaseInquirer {
     await this.processAnswer()
   }
 
-  public async registerDid() {
-    const balance = await this.faber.getAccountBalance()
-    if(balance) await this.faber.registerDid()
-  }
-
-  public async resolveDid() {
-    const response = await this.faber.resolveDid()
-    console.log('Did document: ', {
-      didDocument: response.didDocument,
-      resources: response.didDocumentMetadata.linkedResourceMetadata
-    })
-  }
-
-  public async getBalance() {
-    const title = Title.GetBalanceTitle
-    console.log('Your current balance: ', await this.faber.getAccountBalance())
-  }
-
   public async connection() {
-    const title = Title.InvitationTitle
-    const getUrl = await inquirer.prompt([this.inquireInput(title)])
-    await this.faber.acceptConnection(getUrl.input)
+    await this.faber.setupConnection()
   }
 
   public async exitUseCase(title: string) {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(title)])
+    const confirm = await prompt([this.inquireConfirmation(title)])
     if (confirm.options === ConfirmOptions.No) {
       return false
     } else if (confirm.options === ConfirmOptions.Yes) {
@@ -145,19 +100,15 @@ export class FaberInquirer extends BaseInquirer {
     await this.listener.newAcceptedPrompt(title, this)
   }
 
-  public async getProofs() {
-    await this.faber.getProofs()
-  }
-
   public async message() {
     const message = await this.inquireMessage()
-    if (message) return
+    if (!message) return
 
     await this.faber.sendMessage(message)
   }
 
   public async exit() {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(Title.ConfirmTitle)])
+    const confirm = await prompt([this.inquireConfirmation(Title.ConfirmTitle)])
     if (confirm.options === ConfirmOptions.No) {
       return
     } else if (confirm.options === ConfirmOptions.Yes) {
@@ -166,12 +117,11 @@ export class FaberInquirer extends BaseInquirer {
   }
 
   public async restart() {
-    const confirm = await inquirer.prompt([this.inquireConfirmation(Title.ConfirmTitle)])
+    const confirm = await prompt([this.inquireConfirmation(Title.ConfirmTitle)])
     if (confirm.options === ConfirmOptions.No) {
       await this.processAnswer()
       return
     } else if (confirm.options === ConfirmOptions.Yes) {
-      
       await this.faber.restart()
       await runFaber()
     }

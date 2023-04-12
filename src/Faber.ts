@@ -1,117 +1,141 @@
-import type { ConnectionRecord } from '@aries-framework/core'
-import type { CredDef, Schema } from 'indy-sdk'
+import type { RegisterCredentialDefinitionReturnStateFinished } from '@aries-framework/anoncreds'
+import { ConnectionRecord, ConnectionStateChangedEvent, DidDocument, V2CredentialPreview } from '@aries-framework/core'
 import type BottomBar from 'inquirer/lib/ui/bottom-bar'
 
-import { V1CredentialPreview, AttributeFilter, ProofAttributeInfo, utils } from '@aries-framework/core'
+import { KeyType, TypedArrayEncoder, utils, ConnectionEventTypes } from '@aries-framework/core'
 import { ui } from 'inquirer'
 
-import { BaseAgent, Wallet } from './BaseAgent'
+import { BaseAgent } from './BaseAgent'
 import { Color, greenText, Output, purpleText, redText } from './OutputClass'
 
-import { generateKeyPairFromSeed } from '@stablelib/ed25519'
-import { TypedArrayEncoder } from '@aries-framework/core/build/utils'
-import { createVerificationKeys } from '@cheqd/sdk'
-import { MethodSpecificIdAlgo } from '@cheqd/sdk/build/types'
-import { toString } from 'uint8arrays'
-import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing'
-import { StargateClient } from '@cosmjs/stargate'
-import { existsSync, readFileSync, writeFileSync } from 'fs' 
-import fetch from 'node-fetch'
-
 export class Faber extends BaseAgent {
-  public connectionRecordAliceId?: string
-  public credentialDefinition?: CredDef
+  public outOfBandId?: string
+  public credentialDefinition?: RegisterCredentialDefinitionReturnStateFinished
+  public anonCredsIssuerId?: string
   public ui: BottomBar
-  public did?: string
 
-  public constructor(port: number, name: string, wallet: Wallet) {
-    super(port, name, wallet)
+  public constructor(port: number, name: string) {
+    super({ port, name, useLegacyIndySdk: false })
     this.ui = new ui.BottomBar()
-    this.config.publicDidSeed = wallet.seed
   }
 
   public static async build(): Promise<Faber> {
-    const account = await DirectSecp256k1HdWallet.generate(undefined, {prefix: 'cheqd'})
-    let wallet:Wallet
-
-    if (existsSync('./faber.json')) {
-      wallet =  JSON.parse(readFileSync("./faber.json", 'utf-8'))
-    } else {
-      wallet = {
-        address: (await account.getAccounts())[0].address,
-        mnemonic: account.mnemonic,
-        seed: Math.random().toString(2).substring(2, 34)
-      }
-      writeFileSync('./faber.json', JSON.stringify(wallet))
-    }
-
-    const faber = new Faber(9001, 'faber', wallet)
+    const faber = new Faber(11020, 'faber')
     await faber.initializeAgent()
 
-    console.log(greenText(`Your Cheqd address: ${wallet.address}`))
+    // NOTE: we assume the did is already registered on the ledger, we just store the private key in the wallet
+    // and store the existing did in the wallet
+    const privateKey = TypedArrayEncoder.fromString('afjdemoverysercure00000000000003')
+
+    await faber.agent.wallet.createKey({
+      keyType: KeyType.Ed25519,
+      privateKey,
+    }).catch(()=>{})
+
+    // create a DID
+    await faber.agent.dids.import({
+        did: "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2",
+        didDocument: new DidDocument({
+            id: "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2",
+            controller: [
+              "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2"
+            ],
+            verificationMethod: [
+              {
+                "id": "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2#key-1",
+                "type": "Ed25519VerificationKey2018",
+                "controller": "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2",
+                "publicKeyBase58": "281EuEPGaUVqTn96xFmGMZk5qrMiiPBZhLqGCyBqEPmA"
+              }
+            ],
+            authentication: [
+              "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2#key-1"
+            ],
+            assertionMethod: [
+                "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2#key-1"
+            ]
+          }),
+          privateKeys: [{
+            keyType: KeyType.Ed25519,
+            privateKey
+          }]
+    }).catch(()=>{})
+    faber.anonCredsIssuerId = 'did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2' //didResposne.didState.did
+    console.log(faber.anonCredsIssuerId)
 
     return faber
   }
 
   private async getConnectionRecord() {
-    if (!this.connectionRecordAliceId) {
+    if (!this.outOfBandId) {
       throw Error(redText(Output.MissingConnectionRecord))
     }
-    return await this.agent.connections.getById(this.connectionRecordAliceId)
-  }
 
-  private async receiveConnectionRequest(invitationUrl: string) {
-    const { connectionRecord } = await this.agent.oob.receiveInvitationFromUrl(invitationUrl)
-    if (!connectionRecord) {
-      throw new Error(redText(Output.NoConnectionRecordFromOutOfBand))
+    const [connection] = await this.agent.connections.findAllByOutOfBandId(this.outOfBandId)
+
+    if (!connection) {
+      throw Error(redText(Output.MissingConnectionRecord))
     }
-    return connectionRecord
+
+    return connection
   }
 
-  private async waitForConnection(connectionRecord: ConnectionRecord) {
-    connectionRecord = await this.agent.connections.returnWhenIsConnected(connectionRecord.id)
+  private async printConnectionInvite() {
+    const outOfBand = await this.agent.oob.createInvitation({
+        autoAcceptConnection: true
+    })
+    this.outOfBandId = outOfBand.id
+
+    console.log(
+      Output.ConnectionLink,
+      outOfBand.outOfBandInvitation.toUrl({ domain: `http://localhost:${this.port}` }),
+      '\n'
+    )
+  }
+
+  private async waitForConnection() {
+    if (!this.outOfBandId) {
+      throw new Error(redText(Output.MissingConnectionRecord))
+    }
+
+    console.log('Waiting for Alice to finish connection...')
+
+    const getConnectionRecord = (outOfBandId: string) =>
+      new Promise<ConnectionRecord>((resolve, reject) => {
+        // Timeout of 20 seconds
+        const timeoutId = setTimeout(() => reject(new Error(redText(Output.MissingConnectionRecord))), 40000)
+
+        // Start listener
+        this.agent.events.on<ConnectionStateChangedEvent>(ConnectionEventTypes.ConnectionStateChanged, (e) => {
+          if (e.payload.connectionRecord.outOfBandId !== outOfBandId) return
+
+          clearTimeout(timeoutId)
+          resolve(e.payload.connectionRecord)
+        })
+
+        // Also retrieve the connection record by invitation if the event has already fired
+        void this.agent.connections.findAllByOutOfBandId(outOfBandId).then(([connectionRecord]) => {
+          if (connectionRecord) {
+            clearTimeout(timeoutId)
+            resolve(connectionRecord)
+          }
+        })
+      })
+
+    const connectionRecord = await getConnectionRecord(this.outOfBandId)
+
+    try {
+      await this.agent.connections.returnWhenIsConnected(connectionRecord.id)
+    } catch (e) {
+      console.log(redText(`\nTimeout of 20 seconds reached.. Returning to home screen.\n`))
+      return
+    }
     console.log(greenText(Output.ConnectionEstablished))
-    return connectionRecord.id
   }
 
-  public async registerDid() {
-    try {
-      await this.agent.ledger.registerPublicDid("", "", "")
-      console.log(greenText(`${this.did} registered successfully`))
-    } catch {
-      console.log('Please try again, Failed to register DID')
-    }
-  }
-
-  public async resolveDid() {
-    if (!this.did) {
-      const seed = this.agent.config.publicDidSeed!
-      const keyPair = generateKeyPairFromSeed(TypedArrayEncoder.fromString(seed))
-      const cheqdKeyPair = {
-        publicKey: toString(keyPair.publicKey, 'base64'),
-        privateKey: toString(keyPair.secretKey, 'base64'),
-      }
-      const verificationKey = createVerificationKeys(cheqdKeyPair, MethodSpecificIdAlgo.Base58, 'key-1')
-      this.did = verificationKey.didUrl
-      console.log('Your DID: ', this.did)
-    } 
-    try {
-      const resp = await fetch(`${this.config.cheqdConfig!.resolverUrl}/1.0/identifiers/${this.did}`)
-      return await resp.json()
-    } catch {
-      return null
-    }
-  }
-
-  public async getAccountBalance() {
-    const client = await StargateClient.connect(this.config.cheqdConfig!.rpcUrl)
-    const balance = await client.getBalance(this.wallet.address, 'ncheq')
-    return parseInt(balance.amount)
-  }
-
-  public async acceptConnection(invitation_url: string) {
-    const connectionRecord = await this.receiveConnectionRequest(invitation_url)
-    this.connectionRecordAliceId = await this.waitForConnection(connectionRecord)
+  public async setupConnection() {
+    await this.printConnectionInvite()
+    await this.waitForConnection()
   }
 
   private printSchema(name: string, version: string, attributes: string[]) {
@@ -122,31 +146,66 @@ export class Faber extends BaseAgent {
   }
 
   private async registerSchema() {
-    const schemaTemplate = {
-      name: 'FaberCollege' + utils.uuid(),
-      version: '1.0',
-      attributes: ['name', 'degree', 'date'],
+    if (!this.anonCredsIssuerId) {
+      throw new Error(redText('Missing anoncreds issuerId'))
     }
-    this.printSchema(schemaTemplate.name, schemaTemplate.version, schemaTemplate.attributes)
+    const schemaTemplate = {
+      name: 'Faber College' + utils.uuid(),
+      version: '1.0.0',
+      attrNames: ['name', 'degree', 'date'],
+      issuerId: this.anonCredsIssuerId,
+    }
+    this.printSchema(schemaTemplate.name, schemaTemplate.version, schemaTemplate.attrNames)
     this.ui.updateBottomBar(greenText('\nRegistering schema...\n', false))
-    const schema = await this.agent.ledger.registerSchema(schemaTemplate)
-    this.ui.updateBottomBar('\nSchema registered!\n')
-    return schema
+
+    const { schemaState } = await this.agent.modules.anoncreds.registerSchema({
+      schema: schemaTemplate,
+      options: {
+        didIndyNamespace: 'bcovrin:test',
+      },
+    })
+
+    if (schemaState.state !== 'finished') {
+      throw new Error(
+        `Error registering schema: ${schemaState.state === 'failed' ? schemaState.reason : 'Not Finished'}`
+      )
+    }
+    this.ui.updateBottomBar(`\n${schemaState.schemaId} Schema registered!\n`)
+    return schemaState
   }
 
-  private async registerCredentialDefinition(schema: Schema) {
+  private async registerCredentialDefinition(schemaId: string) {
+    if (!this.anonCredsIssuerId) {
+      throw new Error(redText('Missing anoncreds issuerId'))
+    }
+
     this.ui.updateBottomBar('\nRegistering credential definition...\n')
-    this.credentialDefinition = await this.agent.ledger.registerCredentialDefinition({
-      schema,
-      tag: 'latest',
-      supportRevocation: false,
+    const { credentialDefinitionState } = await this.agent.modules.anoncreds.registerCredentialDefinition({
+      credentialDefinition: {
+        schemaId,
+        issuerId: this.anonCredsIssuerId,
+        tag: 'latest',
+      },
+      options: {
+        didIndyNamespace: 'bcovrin:test',
+      },
     })
-    this.ui.updateBottomBar('\nCredential definition registered!!\n')
+
+    if (credentialDefinitionState.state !== 'finished') {
+      throw new Error(
+        `Error registering credential definition: ${
+          credentialDefinitionState.state === 'failed' ? credentialDefinitionState.reason : 'Not Finished'
+        }}`
+      )
+    }
+
+    this.credentialDefinition = credentialDefinitionState
+    this.ui.updateBottomBar(`\n${this.credentialDefinition.credentialDefinitionId} Credential definition registered!!\n`)
     return this.credentialDefinition
   }
 
   private getCredentialPreview() {
-    const credentialPreview = V1CredentialPreview.fromRecord({
+    const credentialPreview = V2CredentialPreview.fromRecord({
       name: 'Alice Smith',
       degree: 'Computer Science',
       date: '01/01/2022',
@@ -156,20 +215,19 @@ export class Faber extends BaseAgent {
 
   public async issueCredential() {
     const schema = await this.registerSchema()
-    const credDef = await this.registerCredentialDefinition(schema)
-    const credentialPreview = this.getCredentialPreview()
+    const credentialDefinition = await this.registerCredentialDefinition(schema.schemaId)
     const connectionRecord = await this.getConnectionRecord()
-
+    const credentialPreview = this.getCredentialPreview()
     this.ui.updateBottomBar('\nSending credential offer...\n')
 
     await this.agent.credentials.offerCredential({
       connectionId: connectionRecord.id,
-      protocolVersion: 'v1',
+      protocolVersion: 'v2',
       credentialFormats: {
-        indy: {
-          attributes: credentialPreview.attributes,
-          credentialDefinitionId: credDef.id,
-        },
+        anoncreds: {
+            attributes: credentialPreview.attributes,
+            credentialDefinitionId: credentialDefinition.credentialDefinitionId,
+        }
       },
     })
     this.ui.updateBottomBar(
@@ -185,15 +243,16 @@ export class Faber extends BaseAgent {
   private async newProofAttribute() {
     await this.printProofFlow(greenText(`Creating new proof attribute for 'name' ...\n`))
     const proofAttribute = {
-      name: new ProofAttributeInfo({
+      name: {
         name: 'name',
         restrictions: [
-          new AttributeFilter({
-            credentialDefinitionId: this.credentialDefinition?.id,
-          }),
+          {
+            cred_def_id: this.credentialDefinition?.credentialDefinitionId,
+          },
         ],
-      }),
+      },
     }
+
     return proofAttribute
   }
 
@@ -201,20 +260,21 @@ export class Faber extends BaseAgent {
     const connectionRecord = await this.getConnectionRecord()
     const proofAttribute = await this.newProofAttribute()
     await this.printProofFlow(greenText('\nRequesting proof...\n', false))
-    await this.agent.proofs.requestProof(connectionRecord.id, {
-      requestedAttributes: proofAttribute,
+
+    await this.agent.proofs.requestProof({
+      protocolVersion: 'v2',
+      connectionId: connectionRecord.id,
+      proofFormats: {
+        anoncreds: {
+          name: 'proof-request',
+          version: '1.0',
+          requested_attributes: proofAttribute,
+        },
+      },
     })
     this.ui.updateBottomBar(
       `\nProof request sent!\n\nGo to the Alice agent to accept the proof request\n\n${Color.Reset}`
     )
-  }
-
-  public async getProofs() {
-    const proofs = await this.agent.proofs.getAll()
-    for(var proof of proofs) {
-      if(proof.presentationMessage) 
-        console.log(proof.presentationMessage.indyProof?.requested_proof, "\n")
-    }
   }
 
   public async sendMessage(message: string) {

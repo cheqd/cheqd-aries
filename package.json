@@ -13,23 +13,23 @@
     "faber": "ts-node src/FaberInquirer.ts",
     "refresh": "rm -rf ./node_modules ./yarn.lock && yarn"
   },
-  "devDependencies": {
-    "@aries-framework/core": "npm:@daevm/aries-cheqd-core@0.2.2",
-    "@aries-framework/node": "npm:@daevm/aries-cheqd-node@0.2.2",
-    "@types/figlet": "^1.5.4",
-    "@types/inquirer": "^8.1.3",
-    "clear": "^0.1.0",
-    "commander": "^8.3.0",
-    "figlet": "^1.5.2",
-    "ts-node": "^10.4.0",
-    "typescript": "^4.8.3"
-  },
   "dependencies": {
-    "@cheqd/sdk": "^1.3.0",
-    "@cosmjs/proto-signing": "^0.29.0",
-    "@cosmjs/stargate": "^0.29.0",
-    "@stablelib/ed25519": "^1.0.3",
-    "inquirer": "^7.3.3",
-    "uint8arrays": "^3.1.0"
+    "@hyperledger/anoncreds-nodejs": "^0.1.0-dev.14",
+    "@hyperledger/aries-askar-nodejs": "^0.1.0-dev.8",
+    "@aries-framework/anoncreds": "file:./aries-framework-anoncreds-0.3.3.tgz",
+    "@aries-framework/anoncreds-rs": "file:./aries-framework-anoncreds-rs-0.3.3.tgz",
+    "@aries-framework/askar": "file:./aries-framework-askar-0.3.3.tgz",
+    "@aries-framework/core": "file:./aries-framework-core-0.3.3.tgz",
+    "@aries-framework/cheqd": "file:./aries-framework-cheqd-0.3.3.tgz",
+    "@aries-framework/node": "file:./aries-framework-node-0.3.3.tgz",
+    "inquirer": "^8.2.5"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.5.4",
+    "@types/indy-sdk": "^1.16.26",
+    "@types/inquirer": "^8.2.6",
+    "clear": "^0.1.0",
+    "figlet": "^1.5.2",
+    "ts-node": "^10.4.0"
   }
 }
