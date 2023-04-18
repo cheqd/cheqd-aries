@@ -84,7 +84,7 @@ function getAskarAnonCredsCheqdModules() {
       // Credentials module is enabled by default, but we can
       // override the default configuration
       credentials: new CredentialsModule({
-        autoAcceptCredentials: AutoAcceptCredential.Always,
+        autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
   
         // Support v2 protocol
         credentialProtocols: [
@@ -97,7 +97,7 @@ function getAskarAnonCredsCheqdModules() {
       // Proofs module is enabled by default, but we can
       // override the default configuration
       proofs: new ProofsModule({
-        autoAcceptProofs: AutoAcceptProof.Always,
+        autoAcceptProofs: AutoAcceptProof.ContentApproved,
   
         // Support v2 protocol
         proofProtocols: [
@@ -123,7 +123,8 @@ function getAskarAnonCredsCheqdModules() {
         networks: [
           {
             network: 'testnet',
-            cosmosPayerSeed: '000000000000000000000000000cheqd',
+            // cosmosPayerSeed: '00000000000000000000000000cheqd2'
+            cosmosPayerSeed: 'robust across amount corn curve panther opera wish toe ring bleak empower wreck party abstract glad average muffin picnic jar squeeze annual long aunt',
           },
         ],
     })),

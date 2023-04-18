@@ -19,6 +19,7 @@ export const runAlice = async () => {
 enum PromptOptions {
   ReceiveConnectionUrl = 'Receive connection invitation',
   SendMessage = 'Send message',
+  ListCredentials = 'List credentials',
   Exit = 'Exit',
   Restart = 'Restart',
 }
@@ -44,7 +45,7 @@ export class AliceInquirer extends BaseInquirer {
   private async getPromptChoice() {
     if (this.alice.connectionRecordFaberId) return prompt([this.inquireOptions(this.promptOptionsString)])
 
-    const reducedOption = [PromptOptions.ReceiveConnectionUrl, PromptOptions.Exit, PromptOptions.Restart]
+    const reducedOption = [PromptOptions.ReceiveConnectionUrl, PromptOptions.ListCredentials, PromptOptions.Exit, PromptOptions.Restart]
     return prompt([this.inquireOptions(reducedOption)])
   }
 
@@ -58,6 +59,9 @@ export class AliceInquirer extends BaseInquirer {
         break
       case PromptOptions.SendMessage:
         await this.message()
+        break
+      case PromptOptions.ListCredentials:
+        await this.listCredentials()
         break
       case PromptOptions.Exit:
         await this.exit()
@@ -81,7 +85,7 @@ export class AliceInquirer extends BaseInquirer {
   public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
     const confirm = await prompt([this.inquireConfirmation(Title.ProofRequestTitle)])
     if (confirm.options === ConfirmOptions.No) {
-      await this.alice.agent.proofs.declineRequest(proofRecord.id)
+      await this.alice.agent.proofs.declineRequest({proofRecordId: proofRecord.id})
     } else if (confirm.options === ConfirmOptions.Yes) {
       await this.alice.acceptProofRequest(proofRecord)
     }
@@ -95,6 +99,10 @@ export class AliceInquirer extends BaseInquirer {
 
     this.listener.credentialOfferListener(this.alice, this)
     this.listener.proofRequestListener(this.alice, this)
+  }
+
+  public async listCredentials() {
+    await this.alice.getCredentials()
   }
 
   public async message() {

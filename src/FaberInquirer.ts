@@ -18,6 +18,7 @@ enum PromptOptions {
   CreateConnection = 'Create connection invitation',
   OfferCredential = 'Offer credential',
   RequestProof = 'Request proof',
+  ListProofs = 'List Proofs',
   SendMessage = 'Send message',
   Exit = 'Exit',
   Restart = 'Restart',
@@ -44,7 +45,7 @@ export class FaberInquirer extends BaseInquirer {
   private async getPromptChoice() {
     if (this.faber.outOfBandId) return prompt([this.inquireOptions(this.promptOptionsString)])
 
-    const reducedOption = [PromptOptions.CreateConnection, PromptOptions.Exit, PromptOptions.Restart]
+    const reducedOption = [PromptOptions.CreateConnection, PromptOptions.ListProofs, PromptOptions.Exit, PromptOptions.Restart]
     return prompt([this.inquireOptions(reducedOption)])
   }
 
@@ -62,6 +63,9 @@ export class FaberInquirer extends BaseInquirer {
       case PromptOptions.RequestProof:
         await this.proof()
         return
+      case PromptOptions.ListProofs:
+        await this.getProofs()
+        break
       case PromptOptions.SendMessage:
         await this.message()
         break
@@ -98,6 +102,10 @@ export class FaberInquirer extends BaseInquirer {
     await this.faber.sendProofRequest()
     const title = 'Is the proof request accepted?'
     await this.listener.newAcceptedPrompt(title, this)
+  }
+
+  public async getProofs() {
+    await this.faber.getProofs()
   }
 
   public async message() {

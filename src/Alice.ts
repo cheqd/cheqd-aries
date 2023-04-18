@@ -1,7 +1,7 @@
 import type { ConnectionRecord, CredentialExchangeRecord, ProofExchangeRecord } from '@aries-framework/core'
 
 import { BaseAgent } from './BaseAgent'
-import { greenText, Output, redText } from './OutputClass'
+import { greenText, Output, purpleText, redText } from './OutputClass'
 
 export class Alice extends BaseAgent {
   public connected: boolean
@@ -15,6 +15,7 @@ export class Alice extends BaseAgent {
   public static async build(): Promise<Alice> {
     const alice = new Alice(11030, 'alice')
     await alice.initializeAgent()
+    await alice.agent.modules.anoncreds.createLinkSecret()
     return alice
   }
 
@@ -61,6 +62,14 @@ export class Alice extends BaseAgent {
       proofFormats: requestedCredentials.proofFormats,
     })
     console.log(greenText('\nProof request accepted!\n'))
+  }
+
+  public async getCredentials() {
+    const credentials = await this.agent.credentials.getAll()
+    credentials.forEach((cred, i)=>{
+      console.log(purpleText(`\ncredential-${i} : `))
+      console.log(greenText(`${JSON.stringify(cred.credentialAttributes, null, 2)}\n`))
+    })
   }
 
   public async sendMessage(message: string) {

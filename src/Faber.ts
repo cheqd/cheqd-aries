@@ -152,7 +152,7 @@ export class Faber extends BaseAgent {
     const schemaTemplate = {
       name: 'Faber College' + utils.uuid(),
       version: '1.0.0',
-      attrNames: ['name', 'degree', 'date'],
+      attrNames: ['name', 'degree'],
       issuerId: this.anonCredsIssuerId,
     }
     this.printSchema(schemaTemplate.name, schemaTemplate.version, schemaTemplate.attrNames)
@@ -160,9 +160,7 @@ export class Faber extends BaseAgent {
 
     const { schemaState } = await this.agent.modules.anoncreds.registerSchema({
       schema: schemaTemplate,
-      options: {
-        didIndyNamespace: 'bcovrin:test',
-      },
+      options: {},
     })
 
     if (schemaState.state !== 'finished') {
@@ -180,15 +178,14 @@ export class Faber extends BaseAgent {
     }
 
     this.ui.updateBottomBar('\nRegistering credential definition...\n')
+    console.log(schemaId, this.anonCredsIssuerId)
     const { credentialDefinitionState } = await this.agent.modules.anoncreds.registerCredentialDefinition({
       credentialDefinition: {
         schemaId,
         issuerId: this.anonCredsIssuerId,
         tag: 'latest',
       },
-      options: {
-        didIndyNamespace: 'bcovrin:test',
-      },
+      options: {},
     })
 
     if (credentialDefinitionState.state !== 'finished') {
@@ -207,8 +204,7 @@ export class Faber extends BaseAgent {
   private getCredentialPreview() {
     const credentialPreview = V2CredentialPreview.fromRecord({
       name: 'Alice Smith',
-      degree: 'Computer Science',
-      date: '01/01/2022',
+      degree: 'Computer Science'
     })
     return credentialPreview
   }
@@ -275,6 +271,15 @@ export class Faber extends BaseAgent {
     this.ui.updateBottomBar(
       `\nProof request sent!\n\nGo to the Alice agent to accept the proof request\n\n${Color.Reset}`
     )
+  }
+
+  public async getProofs() {
+    const proofs = await this.agent.proofs.getAll()
+    for(var proof of proofs) {
+      const data = await this.agent.proofs.getFormatData(proof.id)
+      console.log(purpleText(`\nverified: ${proof.isVerified}\n`))
+      console.log(greenText(`${JSON.stringify(data.presentation?.anoncreds?.requested_proof.revealed_attrs, null, 2)}\n`))
+    }
   }
 
   public async sendMessage(message: string) {
