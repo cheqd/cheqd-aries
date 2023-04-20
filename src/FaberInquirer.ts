@@ -16,6 +16,7 @@ export const runFaber = async () => {
 
 enum PromptOptions {
   CreateConnection = 'Create connection invitation',
+  CreateDid = 'Publish your DID',
   OfferCredential = 'Offer credential',
   RequestProof = 'Request proof',
   ListProofs = 'List Proofs',
@@ -43,10 +44,15 @@ export class FaberInquirer extends BaseInquirer {
   }
 
   private async getPromptChoice() {
-    if (this.faber.outOfBandId) return prompt([this.inquireOptions(this.promptOptionsString)])
+    if (!this.faber.anonCredsIssuerId) {
+      const reducedOption = [PromptOptions.CreateConnection, PromptOptions.CreateDid, PromptOptions.ListProofs, PromptOptions.Exit, PromptOptions.Restart]
+      return prompt([this.inquireOptions(reducedOption)])
+    } else if (!this.faber.outOfBandId) {
+      const reducedOption = [PromptOptions.CreateConnection, PromptOptions.ListProofs, PromptOptions.Exit, PromptOptions.Restart]
+      return prompt([this.inquireOptions(reducedOption)])   
+    }
 
-    const reducedOption = [PromptOptions.CreateConnection, PromptOptions.ListProofs, PromptOptions.Exit, PromptOptions.Restart]
-    return prompt([this.inquireOptions(reducedOption)])
+    return prompt([this.inquireOptions(this.promptOptionsString)])
   }
 
   public async processAnswer() {
@@ -56,6 +62,9 @@ export class FaberInquirer extends BaseInquirer {
     switch (choice.options) {
       case PromptOptions.CreateConnection:
         await this.connection()
+        break
+      case PromptOptions.CreateDid:
+        await this.createDid()
         break
       case PromptOptions.OfferCredential:
         await this.credential()
@@ -90,6 +99,10 @@ export class FaberInquirer extends BaseInquirer {
     } else if (confirm.options === ConfirmOptions.Yes) {
       return true
     }
+  }
+
+  public async createDid() {
+    await this.faber.registerDid()
   }
 
   public async credential() {

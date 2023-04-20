@@ -1,4 +1,4 @@
-import type { RegisterCredentialDefinitionReturnStateFinished } from '@aries-framework/anoncreds'
+import type { AnonCredsPredicateType, AnonCredsRequestedPredicate, RegisterCredentialDefinitionReturnStateFinished } from '@aries-framework/anoncreds'
 import { ConnectionRecord, ConnectionStateChangedEvent, DidDocument, V2CredentialPreview } from '@aries-framework/core'
 import type BottomBar from 'inquirer/lib/ui/bottom-bar'
 
@@ -31,37 +31,6 @@ export class Faber extends BaseAgent {
       keyType: KeyType.Ed25519,
       privateKey,
     }).catch(()=>{})
-
-    // create a DID
-    await faber.agent.dids.import({
-        did: "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2",
-        didDocument: new DidDocument({
-            id: "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2",
-            controller: [
-              "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2"
-            ],
-            verificationMethod: [
-              {
-                "id": "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2#key-1",
-                "type": "Ed25519VerificationKey2018",
-                "controller": "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2",
-                "publicKeyBase58": "281EuEPGaUVqTn96xFmGMZk5qrMiiPBZhLqGCyBqEPmA"
-              }
-            ],
-            authentication: [
-              "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2#key-1"
-            ],
-            assertionMethod: [
-                "did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2#key-1"
-            ]
-          }),
-          privateKeys: [{
-            keyType: KeyType.Ed25519,
-            privateKey
-          }]
-    }).catch(()=>{})
-    faber.anonCredsIssuerId = 'did:cheqd:testnet:2d6841a0-8614-44c0-95c5-d54c61e420f2' //didResposne.didState.did
-    console.log(faber.anonCredsIssuerId)
 
     return faber
   }
@@ -145,6 +114,27 @@ export class Faber extends BaseAgent {
     console.log(purpleText(`Attributes: ${Color.Reset}${attributes[0]}, ${attributes[1]}, ${attributes[2]}\n`))
   }
 
+  public async registerDid() {
+    const didResult = await this.agent.dids.create({
+        method: 'cheqd',
+        secret: {
+            verificationMethod: {
+                id: 'key-1',
+                type: 'JsonWebKey2020'
+            }
+        },
+        options: {
+            network: 'testnet'
+        }
+    })
+    if (didResult.didState.did) {
+      console.log(greenText(`DID: ${didResult.didState.did}`))
+      this.anonCredsIssuerId = didResult.didState.did
+    } else {
+        console.log(redText('Failed to register DID, try again'))
+    }
+  }
+
   private async registerSchema() {
     if (!this.anonCredsIssuerId) {
       throw new Error(redText('Missing anoncreds issuerId'))
@@ -152,7 +142,7 @@ export class Faber extends BaseAgent {
     const schemaTemplate = {
       name: 'Faber College' + utils.uuid(),
       version: '1.0.0',
-      attrNames: ['name', 'degree'],
+      attrNames: ['name', 'degree', 'age'],
       issuerId: this.anonCredsIssuerId,
     }
     this.printSchema(schemaTemplate.name, schemaTemplate.version, schemaTemplate.attrNames)
@@ -178,7 +168,6 @@ export class Faber extends BaseAgent {
     }
 
     this.ui.updateBottomBar('\nRegistering credential definition...\n')
-    console.log(schemaId, this.anonCredsIssuerId)
     const { credentialDefinitionState } = await this.agent.modules.anoncreds.registerCredentialDefinition({
       credentialDefinition: {
         schemaId,
@@ -204,14 +193,18 @@ export class Faber extends BaseAgent {
   private getCredentialPreview() {
     const credentialPreview = V2CredentialPreview.fromRecord({
       name: 'Alice Smith',
-      degree: 'Computer Science'
+      degree: 'Computer Science',
+      age: '22'
     })
     return credentialPreview
   }
 
   public async issueCredential() {
-    const schema = await this.registerSchema()
-    const credentialDefinition = await this.registerCredentialDefinition(schema.schemaId)
+    if(!this.credentialDefinition) {
+      const schema = await this.registerSchema()
+      const credentialDefinition = await this.registerCredentialDefinition(schema.schemaId)
+      this.credentialDefinition = credentialDefinition
+    }
     const connectionRecord = await this.getConnectionRecord()
     const credentialPreview = this.getCredentialPreview()
     this.ui.updateBottomBar('\nSending credential offer...\n')
@@ -222,7 +215,7 @@ export class Faber extends BaseAgent {
       credentialFormats: {
         anoncreds: {
             attributes: credentialPreview.attributes,
-            credentialDefinitionId: credentialDefinition.credentialDefinitionId,
+            credentialDefinitionId: this.credentialDefinition.credentialDefinitionId,
         }
       },
     })
@@ -237,7 +230,7 @@ export class Faber extends BaseAgent {
   }
 
   private async newProofAttribute() {
-    await this.printProofFlow(greenText(`Creating new proof attribute for 'name' ...\n`))
+    await this.printProofFlow(greenText(`Creating proof request for 'name' and 'age > 21'...\n`))
     const proofAttribute = {
       name: {
         name: 'name',
@@ -249,12 +242,25 @@ export class Faber extends BaseAgent {
       },
     }
 
-    return proofAttribute
+    const proofPredicate = {
+      age: {
+        name: 'age',
+        p_type: '>',
+        p_value: 21,
+        restrictions: [
+          {
+            cred_def_id: this.credentialDefinition?.credentialDefinitionId,
+          },
+        ],
+      } as AnonCredsRequestedPredicate
+    } 
+
+    return {proofAttribute, proofPredicate}
   }
 
   public async sendProofRequest() {
     const connectionRecord = await this.getConnectionRecord()
-    const proofAttribute = await this.newProofAttribute()
+    const {proofAttribute, proofPredicate} = await this.newProofAttribute()
     await this.printProofFlow(greenText('\nRequesting proof...\n', false))
 
     await this.agent.proofs.requestProof({
@@ -265,6 +271,7 @@ export class Faber extends BaseAgent {
           name: 'proof-request',
           version: '1.0',
           requested_attributes: proofAttribute,
+          requested_predicates: proofPredicate,
         },
       },
     })
@@ -278,7 +285,7 @@ export class Faber extends BaseAgent {
     for(var proof of proofs) {
       const data = await this.agent.proofs.getFormatData(proof.id)
       console.log(purpleText(`\nverified: ${proof.isVerified}\n`))
-      console.log(greenText(`${JSON.stringify(data.presentation?.anoncreds?.requested_proof.revealed_attrs, null, 2)}\n`))
+      console.log(greenText(`${JSON.stringify(data.presentation?.anoncreds?.requested_proof, null, 2)}\n`))
     }
   }
 
